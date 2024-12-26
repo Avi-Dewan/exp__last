@@ -13,10 +13,9 @@ from torch.nn.parallel import DistributedDataParallel
 
 from train import pretrain
 from datasets import get_dataloaders
-from utils import experiment_config, print_network, init_weights
+from util import experiment_config, print_network, init_weights
 import model.network as models
 from model.resnet import ResNet, BasicBlock, Identity
-
 
 warnings.filterwarnings("ignore")
 
@@ -114,6 +113,7 @@ def main():
 
     # Setup  Training
     device = setup()
+    args.device = device
 
     # Get Dataloaders for Dataset of choice
     dataloaders, args = get_dataloaders(args)

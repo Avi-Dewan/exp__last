@@ -15,6 +15,55 @@ from model.losses import SimclrCriterion
 from optimisers import get_optimiser
 
 
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+from sklearn.metrics.cluster import normalized_mutual_info_score as nmi_score
+from sklearn.metrics import adjusted_rand_score as ari_score
+import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
+from utils.util import cluster_acc
+from dataloader.cifarloader import CIFAR10Loader, CIFAR100Loader
+
+def plot_features_And_calculate_metric(model, test_loader, save_path, epoch, device, args):
+    torch.manual_seed(1)
+    model = model.to(device)
+    model.eval()
+    targets = np.array([])
+    outputs = np.zeros((len(test_loader.dataset), 512 )) 
+    
+    for batch_idx, (x, label, idx) in enumerate(tqdm(test_loader)):
+        x, label = x.to(device), label.to(device)
+        _, output = model(x)
+       
+        outputs[idx, :] = output.cpu().detach().numpy()
+        targets = np.append(targets, label.cpu().numpy())
+
+    # print("Unique labels:", np.unique(targets))
+
+    pca = PCA(n_components=20) # PCA for dimensionality reduction PCA: 512 -> 20
+    pca_features = pca.fit_transform(outputs) # fit the PCA model and transform the features
+    kmeans = KMeans(n_clusters=args.n_unlabeled_classes, n_init=20)  # KMeans clustering
+    y_pred = kmeans.fit_predict(pca_features)
+
+    acc, nmi, ari = cluster_acc(targets, y_pred), nmi_score(targets, y_pred), ari_score(targets, y_pred)
+
+    # Normalize targets for categorical mapping
+    targets_normalized = (targets - targets.min()).astype(int)  # Map to range 0-19
+
+    # Create t-SNE visualization
+    X_embedded = TSNE(n_components=2).fit_transform(outputs)
+
+    
+    plt.figure(figsize=(8, 6))
+    scatter = plt.scatter(X_embedded[:, 0], X_embedded[:, 1], c=targets_normalized, cmap='tab20')
+    plt.colorbar(scatter)  # Add color bar to verify mapping
+    plt.title(f"t-SNE Visualization of Features on {args.dataset_name} - Epoch {epoch}")
+    plt.savefig(f"{save_path}/{args.dataset_name}_epoch{epoch}.png")
+
+    return acc, nmi, ari
+
+
+
 def load_checkpoint(checkpoint_path, encoder, mlp, optimiser):
     ''' Load checkpoint from a given file path '''
     if not os.path.exists(checkpoint_path):
@@ -27,9 +76,7 @@ def load_checkpoint(checkpoint_path, encoder, mlp, optimiser):
     mlp.load_state_dict(checkpoint['mlp'])
     optimiser.load_state_dict(checkpoint['optimiser'])
 
-    return checkpoint['epoch'] + 1
-
-
+    return checkpoint['epoch'] 
 
 
 def pretrain(encoder, mlp, dataloaders, args):
@@ -60,11 +107,36 @@ def pretrain(encoder, mlp, dataloaders, args):
     ''' Loss / Criterion '''
     criterion = SimclrCriterion(batch_size=args.batch_size, normalize=True,
                                 temperature=args.temperature).cuda()
+    
 
     # initilize Variables
     args.writer = SummaryWriter(args.summaries_dir)
     best_valid_loss = np.inf
     patience_counter = 0
+
+    '''loading unlabeled datas to check cluster quality and tsne plot'''
+    if args.dataset_name == 'cifar10':
+        dloader_unlabeled_test = CIFAR10Loader(
+            root=args.dataset_root, 
+            batch_size=128, 
+            split='test', 
+            aug=None, 
+            shuffle=False, 
+            target_list = range(5, 10))
+        
+        args.n_unlabeled_classes = 5
+
+    elif args.dataset_name == 'cifar100':
+        dloader_unlabeled_test = CIFAR100Loader(
+            root=args.dataset_root, 
+            batch_size=128, 
+            split='test', 
+            aug=None, 
+            shuffle=False, 
+            target_list = range(25, 50))
+        
+        args.n_unlabeled_classes = 25
+    
 
     start_epoch = 0
 
@@ -152,13 +224,21 @@ def pretrain(encoder, mlp, dataloaders, args):
                 'encoder': encoder.state_dict(),
                 'mlp': mlp.state_dict(),
                 'optimiser': optimiser.state_dict(),
-                'epoch': epoch,
+                'epoch': epoch+1,
             }
             torch.save(state, epoch_checkpoint_path)
+            print(f"Checkpoint saved at epoch-{epoch+1}")
 
         if(epoch+1 == args.n_epochs):
             last_model_path = os.path.join(args.checkpoint_dir, f'resnet_epoch{args.n_epochs}.pth')
             torch.save(encoder.state_dict(), last_model_path)
+
+            acc, nmi, ari = plot_features_And_calculate_metric(encoder, dloader_unlabeled_test, 
+                           args.checkpoint_dir, epoch+1, args.device, args)
+            
+            print("-------------------------------------")
+            print(f'Epoch-{epoch+1}: ACC = {acc} , NMI = {nmi}, ARI = {ari} ')
+            print("-------------------------------------")
 
         # For the best performing epoch, reset patience and save model,
         # else update patience.
