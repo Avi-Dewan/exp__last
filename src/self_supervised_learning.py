@@ -105,7 +105,7 @@ def main():
     dataloaders, args = get_dataloaders(args)
 
     # Setup logging, saving models, summaries
-    args = experiment_config(parser, args)
+    # args = experiment_config(parser, args)
 
     if args.model == 'resnet18':
         base_encoder = ResNet(block=BasicBlock, num_blocks=[2, 2, 2, 2], num_classes=args.n_classes) # Resnet 18
