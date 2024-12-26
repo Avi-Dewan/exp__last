@@ -68,16 +68,19 @@ parser.add_argument('--grey_p', type=float, default=0.2,
 parser.add_argument('--no_twocrop', dest='twocrop', action='store_false',
                     help='Whether or Not to Use Two Crop Augmentation, Used to Create Two Views of the Input for Contrastive Learning. (Default: True)')
 parser.set_defaults(twocrop=True)
-parser.add_argument('--load_checkpoint_dir', default=None,
-                    help='Path to Load Pre-trained Model From.')
-parser.add_argument('--no_distributed', dest='distributed', action='store_false',
-                    help='Whether or Not to Use Distributed Training. (Default: True)')
-parser.set_defaults(distributed=True)
+
+
 parser.add_argument('--finetune', dest='finetune', action='store_true',
                     help='Perform Only Linear Classification Training. (Default: False)')
 parser.set_defaults(finetune=False)
 parser.add_argument('--supervised', dest='supervised', action='store_true',
                     help='Perform Supervised Pre-Training. (Default: False)')
+
+parser.add_argument('--save_interval', type=int, default=50,
+                        help='Interval to save the model and plot tsne(default: 50)')
+parser.add_argument('--checkpoint_path', type = str, default='',
+                    help='Path to Load Pre-trained Model From.')
+
 parser.set_defaults(supervised=False)
 
 
@@ -87,7 +90,6 @@ def setup():
 
     """
    
-    local_rank = None
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     seed = 420
@@ -101,7 +103,7 @@ def setup():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False  # True
 
-    return device, local_rank
+    return device
 
 
 def main():
@@ -110,8 +112,8 @@ def main():
     # Arguments
     args = parser.parse_args()
 
-    # Setup Distributed Training
-    device, local_rank = setup()
+    # Setup  Training
+    device = setup()
 
     # Get Dataloaders for Dataset of choice
     dataloaders, args = get_dataloaders(args)
@@ -119,46 +121,21 @@ def main():
     # Setup logging, saving models, summaries
     args = experiment_config(parser, args)
 
-    '''
-    # Get available models from /model/network.py
-    model_names = sorted(name for name in models.__dict__
-                         if name.islower() and not name.startswith("__")
-                         and callable(models.__dict__[name]))
-
-    # If model exists
-    if any(args.model in model_name for model_name in model_names):
-
-        # Load model
-        base_encoder = getattr(models, args.model)(
-            args, num_classes=args.n_classes)  # Encoder
-
-        proj_head = models.projection_MLP(args)
-
-    else:
-        raise NotImplementedError("Model Not Implemented: {}".format(args.model))
-
-    # Remove last FC layer from resnet
-    base_encoder.fc = nn.Sequential()
-    '''
-
     if args.model == 'resnet18':
         base_encoder = ResNet(block=BasicBlock, num_blocks=[2, 2, 2, 2], num_classes=args.n_classes) # Resnet 18
         proj_head = models.projection_MLP(args)
-        sup_head = models.Sup_Head(args)
     
     base_encoder.linear = Identity()
     
-    # If non Distributed use DataParallel
+    # If multiple GPUs, use DataParallel
     if torch.cuda.device_count() > 1:
         base_encoder = nn.DataParallel(base_encoder)
         proj_head = nn.DataParallel(proj_head)
-        sup_head = nn.DataParallel(sup_head)
 
     print('\nUsing', torch.cuda.device_count(), 'GPU(s).\n')
 
     base_encoder.to(device)
     proj_head.to(device)
-    sup_head.to(device)
 
     args.print_progress = True
 
@@ -170,41 +147,9 @@ def main():
             len(dataloaders['test'].dataset)))
 
     # launch model training or inference
-    if not args.finetune:
-
-        ''' Pretraining / Finetuning / Evaluate '''
-
-        if not args.supervised:
-            # Pretrain the encoder and projection head
-            proj_head.apply(init_weights)
-
-            pretrain(base_encoder, proj_head, dataloaders, args)
-        else:
-            supervised(base_encoder, sup_head, dataloaders, args)
-
-        print("\n\nLoading the model: {}\n\n".format(args.load_checkpoint_dir))
-
-        # Load the pretrained model
-        checkpoint = torch.load(args.load_checkpoint_dir)
-
-        # Load the encoder parameters
-        base_encoder.load_state_dict(checkpoint['encoder'])
-
-        # Initalize weights of the supervised / classification head
-        sup_head.apply(init_weights)
-
-        # Supervised Finetuning of the supervised classification head
-        finetune(base_encoder, sup_head, dataloaders, args)
-
-        # Evaluate the pretrained model and trained supervised head
-        test_loss, test_acc, test_acc_top5 = evaluate(
-            base_encoder, sup_head, dataloaders, 'test', args.finetune_epochs, args)
-
-        print('[Test] loss {:.4f} - acc {:.4f} - acc_top5 {:.4f}'.format(
-            test_loss, test_acc, test_acc_top5))
-
-        if args.distributed:  # cleanup
-            torch.distributed.destroy_process_group()
+    
+    pretrain(base_encoder, proj_head, dataloaders, args)
+        
 
 if __name__ == '__main__':
     main()

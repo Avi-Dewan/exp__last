@@ -15,6 +15,23 @@ from model.losses import SimclrCriterion
 from optimisers import get_optimiser
 
 
+def load_checkpoint(checkpoint_path, encoder, mlp, optimiser):
+    ''' Load checkpoint from a given file path '''
+    if not os.path.exists(checkpoint_path):
+        logging.info(f'Checkpoint file {checkpoint_path} not found. Starting from scratch.')
+        return 0  # Start from epoch 0
+
+    logging.info(f'Loading checkpoint from {checkpoint_path}')
+    checkpoint = torch.load(checkpoint_path)
+    encoder.load_state_dict(checkpoint['encoder'])
+    mlp.load_state_dict(checkpoint['mlp'])
+    optimiser.load_state_dict(checkpoint['optimiser'])
+
+    return checkpoint['epoch'] + 1
+
+
+
+
 def pretrain(encoder, mlp, dataloaders, args):
     ''' Pretrain script - SimCLR
 
@@ -49,8 +66,18 @@ def pretrain(encoder, mlp, dataloaders, args):
     best_valid_loss = np.inf
     patience_counter = 0
 
+    start_epoch = 0
+
+    ''' Load checkpoint if available '''
+    if args.checkpoint_path:
+        start_epoch = load_checkpoint(args.checkpoint_path, encoder, mlp, optimiser)
+
+    '''Create checkpoint dir to save checkpints'''
+    args.checkpoint_dir = './checkpoint'
+    os.makedirs(args.checkpoint_dir, exist_ok=True)
+
     ''' Pretrain loop '''
-    for epoch in range(args.n_epochs):
+    for epoch in range(start_epoch, args.n_epochs):
 
         # Train models
         encoder.train()
@@ -118,331 +145,34 @@ def pretrain(encoder, mlp, dataloaders, args):
             args.writer.add_scalars('epoch_loss', {'pretrain': epoch_pretrain_loss}, epoch+1)
             args.writer.add_scalars('lr', {'pretrain': optimiser.param_groups[0]['lr']}, epoch+1)
 
-        state = {
-            #'args': args,
-            'encoder': encoder.state_dict(),
-            'mlp': mlp.state_dict(),
-            'optimiser': optimiser.state_dict(),
-            'epoch': epoch,
-        }
-
-        torch.save(state, args.checkpoint_dir)
-
-        # For the best performing epoch, reset patience and save model,
-        # else update patience.
-        if epoch_pretrain_loss <= best_valid_loss:
-            patience_counter = 0
-            best_epoch = epoch + 1
-            best_valid_loss = epoch_pretrain_loss
-
-        else:
-            patience_counter += 1
-            if patience_counter == (args.patience - 10):
-                logging.info('\nPatience counter {}/{}.'.format(
-                    patience_counter, args.patience))
-            elif patience_counter == args.patience:
-                logging.info('\nEarly stopping... no improvement after {} Epochs.'.format(
-                    args.patience))
-                break
-
-        epoch_pretrain_loss = None  # reset loss
-
-    del state
-
-    torch.cuda.empty_cache()
-
-    gc.collect()  # release unreferenced memory
-
-
-def supervised(encoder, mlp, dataloaders, args):
-    ''' Supervised Train script - SimCLR
-
-        Supervised Training encoder and train the supervised classification head with a Cross Entropy Loss.
-    '''
-
-    mode = 'pretrain'
-
-    ''' Optimisers '''
-    # Only optimise the supervised head
-    optimiser = get_optimiser((encoder, mlp), mode, args)
-
-    ''' Schedulers '''
-    # Warmup Scheduler
-    if args.warmup_epochs > 0:
-        for param_group in optimiser.param_groups:
-            param_group['lr'] = (1e-12 / args.warmup_epochs) * args.learning_rate
-
-        # Cosine LR Decay after the warmup epochs
-        lr_decay = lr_scheduler.CosineAnnealingLR(
-            optimiser, (args.n_epochs-args.warmup_epochs), eta_min=0.0, last_epoch=-1)
-    else:
-        # Cosine LR Decay
-        lr_decay = lr_scheduler.CosineAnnealingLR(
-            optimiser, args.n_epochs, eta_min=0.0, last_epoch=-1)
-
-    ''' Loss / Criterion '''
-    criterion = torch.nn.CrossEntropyLoss().cuda()
-
-    # initilize Variables
-    args.writer = SummaryWriter(args.summaries_dir)
-    best_valid_loss = np.inf
-    patience_counter = 0
-
-    ''' Pretrain loop '''
-    for epoch in range(args.n_epochs):
-
-        # Train models
-        encoder.train()
-        mlp.train()
-
-        sample_count = 0
-        run_loss = 0
-        run_top1 = 0.0
-        run_top5 = 0.0
-
-        # Print setup for distributed only printing on one node.
-        if args.print_progress:
-            logging.info('\nEpoch {}/{}:\n'.format(epoch+1, args.n_epochs))
-            # tqdm for process (rank) 0 only when using distributed training
-            train_dataloader = tqdm(dataloaders['train'])
-        else:
-            train_dataloader = dataloaders['train']
-
-        ''' epoch loop '''
-        for i, (inputs, target) in enumerate(train_dataloader):
-
-            inputs = inputs.cuda(non_blocking=True)
-
-            target = target.cuda(non_blocking=True)
-
-            # Forward pass
-            optimiser.zero_grad()
-
-            _, h = encoder(inputs)
-
-            # Take pretrained encoder representations
-            output = mlp(h)
-
-            loss = criterion(output, target)
-
-            loss.backward()
-
-            optimiser.step()
-
-            torch.cuda.synchronize()
-
-            sample_count += inputs.size(0)
-
-            run_loss += loss.item()
-
-            predicted = output.argmax(1)
-
-            acc = (predicted == target).sum().item() / target.size(0)
-
-            run_top1 += acc
-
-            _, output_topk = output.topk(5, 1, True, True)
-
-            acc_top5 = (output_topk == target.view(-1, 1).expand_as(output_topk)
-                        ).sum().item() / target.size(0)  # num corrects
-
-            run_top5 += acc_top5
-
-        epoch_pretrain_loss = run_loss / len(dataloaders['train'])  # sample_count
-
-        epoch_pretrain_acc = run_top1 / len(dataloaders['train'])
-
-        epoch_pretrain_acc_top5 = run_top5 / len(dataloaders['train'])
-
-        ''' Update Schedulers '''
-        # TODO: Improve / add lr_scheduler for warmup
-        if args.warmup_epochs > 0 and epoch+1 <= args.warmup_epochs:
-            wu_lr = (float(epoch+1) / args.warmup_epochs) * args.learning_rate
-            save_lr = optimiser.param_groups[0]['lr']
-            optimiser.param_groups[0]['lr'] = wu_lr
-        else:
-            # After warmup, decay lr with CosineAnnealingLR
-            lr_decay.step()
-
-        ''' Printing '''
-        if args.print_progress:  # only validate using process 0
-            logging.info('\n[Train] loss: {:.4f}'.format(epoch_pretrain_loss))
-
-            args.writer.add_scalars('epoch_loss', {
-                                    'pretrain': epoch_pretrain_loss}, epoch+1)
-            args.writer.add_scalars('supervised_epoch_acc', {
-                                    'pretrain': epoch_pretrain_acc}, epoch+1)
-            args.writer.add_scalars('supervised_epoch_acc_top5', {
-                                    'pretrain': epoch_pretrain_acc_top5}, epoch+1)
-            args.writer.add_scalars('epoch_loss', {'pretrain': epoch_pretrain_loss}, epoch+1)
-            args.writer.add_scalars('lr', {'pretrain': optimiser.param_groups[0]['lr']}, epoch+1)
-
-        state = {
-            #'args': args,
-            'encoder': encoder.state_dict(),
-            'mlp': mlp.state_dict(),
-            'optimiser': optimiser.state_dict(),
-            'epoch': epoch,
-        }
-
-        torch.save(state, args.checkpoint_dir)
-
-        # For the best performing epoch, reset patience and save model,
-        # else update patience.
-        if epoch_pretrain_loss <= best_valid_loss:
-            patience_counter = 0
-            best_epoch = epoch + 1
-            best_valid_loss = epoch_pretrain_loss
-
-        else:
-            patience_counter += 1
-            if patience_counter == (args.patience - 10):
-                logging.info('\nPatience counter {}/{}.'.format(
-                    patience_counter, args.patience))
-            elif patience_counter == args.patience:
-                logging.info('\nEarly stopping... no improvement after {} Epochs.'.format(
-                    args.patience))
-                break
-
-        epoch_pretrain_loss = None  # reset loss
-
-    del state
-
-    torch.cuda.empty_cache()
-
-    gc.collect()  # release unreferenced memory
-
-
-def finetune(encoder, mlp, dataloaders, args):
-    ''' Finetune script - SimCLR
-
-        Freeze the encoder and train the supervised classification head with a Cross Entropy Loss.
-    '''
-
-    mode = 'finetune'
-
-    ''' Optimisers '''
-    # Only optimise the supervised head
-    optimiser = get_optimiser((mlp,), mode, args)
-
-    ''' Schedulers '''
-    # Cosine LR Decay
-    lr_decay = lr_scheduler.CosineAnnealingLR(optimiser, args.finetune_epochs)
-
-    ''' Loss / Criterion '''
-    criterion = torch.nn.CrossEntropyLoss().cuda()
-
-    # initilize Variables
-    args.writer = SummaryWriter(args.summaries_dir)
-    best_valid_loss = np.inf
-    best_valid_acc = 0.0
-    patience_counter = 0
-
-    ''' Pretrain loop '''
-    for epoch in range(args.finetune_epochs):
-
-        # Freeze the encoder, train classification head
-        encoder.eval()
-        mlp.train()
-
-        sample_count = 0
-        run_loss = 0
-        run_top1 = 0.0
-        run_top5 = 0.0
-
-        # Print setup for distributed only printing on one node.
-        if args.print_progress:
-            logging.info('\nEpoch {}/{}:\n'.format(epoch+1, args.finetune_epochs))
-            # tqdm for process (rank) 0 only when using distributed training
-            train_dataloader = tqdm(dataloaders['train'])
-        else:
-            train_dataloader = dataloaders['train']
-
-        ''' epoch loop '''
-        for i, (inputs, target) in enumerate(train_dataloader):
-
-            inputs = inputs.cuda(non_blocking=True)
-
-            target = target.cuda(non_blocking=True)
-
-            # Forward pass
-            optimiser.zero_grad()
-
-            # Do not compute the gradients for the frozen encoder
-            with torch.no_grad():
-                _, h = encoder(inputs)
-
-            # Take pretrained encoder representations
-            output = mlp(h)
-
-            loss = criterion(output, target)
-
-            loss.backward()
-
-            optimiser.step()
-
-            torch.cuda.synchronize()
-
-            sample_count += inputs.size(0)
-
-            run_loss += loss.item()
-
-            predicted = output.argmax(1)
-
-            acc = (predicted == target).sum().item() / target.size(0)
-
-            run_top1 += acc
-
-            _, output_topk = output.topk(5, 1, True, True)
-
-            acc_top5 = (output_topk == target.view(-1, 1).expand_as(output_topk)
-                        ).sum().item() / target.size(0)  # num corrects
-
-            run_top5 += acc_top5
-
-        epoch_finetune_loss = run_loss / len(dataloaders['train'])  # sample_count
-
-        epoch_finetune_acc = run_top1 / len(dataloaders['train'])
-
-        epoch_finetune_acc_top5 = run_top5 / len(dataloaders['train'])
-
-        ''' Update Schedulers '''
-        # Decay lr with CosineAnnealingLR
-        lr_decay.step()
-
-        ''' Printing '''
-        if args.print_progress:  # only validate using process 0
-            logging.info('\n[Finetune] loss: {:.4f},\t acc: {:.4f}, \t acc_top5: {:.4f}\n'.format(
-                epoch_finetune_loss, epoch_finetune_acc, epoch_finetune_acc_top5))
-
-            args.writer.add_scalars('finetune_epoch_loss', {'train': epoch_finetune_loss}, epoch+1)
-            args.writer.add_scalars('finetune_epoch_acc', {'train': epoch_finetune_acc}, epoch+1)
-            args.writer.add_scalars('finetune_epoch_acc_top5', {
-                                    'train': epoch_finetune_acc_top5}, epoch+1)
-            args.writer.add_scalars(
-                'finetune_lr', {'train': optimiser.param_groups[0]['lr']}, epoch+1)
-
-        valid_loss, valid_acc, valid_acc_top5 = evaluate(
-            encoder, mlp, dataloaders, 'valid', epoch, args)
-
-        # For the best performing epoch, reset patience and save model,
-        # else update patience.
-        if valid_acc >= best_valid_acc:
-            patience_counter = 0
-            best_epoch = epoch + 1
-            best_valid_acc = valid_acc
-
-            # saving using process (rank) 0 only as all processes are in sync
-
+        ''' Save checkpoint at intervals '''
+        if (epoch + 1) % args.save_interval == 0:
+            epoch_checkpoint_path = os.path.join(args.checkpoint_dir, f'checkpoint_epoch{epoch + 1}.pth')
             state = {
-                #'args': args,
                 'encoder': encoder.state_dict(),
-                'supp_mlp': mlp.state_dict(),
+                'mlp': mlp.state_dict(),
                 'optimiser': optimiser.state_dict(),
-                'epoch': epoch
+                'epoch': epoch,
             }
+            torch.save(state, epoch_checkpoint_path)
 
-            torch.save(state, (args.checkpoint_dir[:-3] + "_finetune.pt"))
+        if(epoch+1 == args.n_epochs):
+            last_model_path = os.path.join(args.checkpoint_dir, f'resnet_epoch{args.n_epochs}.pth')
+            torch.save(encoder.state_dict(), last_model_path)
+
+        # For the best performing epoch, reset patience and save model,
+        # else update patience.
+        if epoch_pretrain_loss <= best_valid_loss:
+            patience_counter = 0
+            best_epoch = epoch + 1
+            best_valid_loss = epoch_pretrain_loss
+
+            # Save only the encoder
+            best_model_path = os.path.join(args.checkpoint_dir, f'resnet.pth')
+            torch.save(encoder.state_dict(), best_model_path)
+
+            print(f'Got the best model at epoch: {best_epoch}')
+
         else:
             patience_counter += 1
             if patience_counter == (args.patience - 10):
@@ -453,15 +183,13 @@ def finetune(encoder, mlp, dataloaders, args):
                     args.patience))
                 break
 
-        epoch_finetune_loss = None  # reset loss
-        epoch_finetune_acc = None
-        epoch_finetune_acc_top5 = None
+        epoch_pretrain_loss = None  # reset loss
 
-    del state
 
     torch.cuda.empty_cache()
 
     gc.collect()  # release unreferenced memory
+
 
 
 def evaluate(encoder, mlp, dataloaders, mode, epoch, args):
