@@ -34,7 +34,7 @@ from sklearn.manifold import TSNE
 from utils.util import cluster_acc
 from dataloader.cifarloader import CIFAR10Loader, CIFAR100Loader
 
-def plot_features_And_calculate_metric(model, test_loader, save_path, epoch, device, args):
+def calculate_metrics(model, test_loader, device, args):
     torch.manual_seed(1)
     model = model.to(device)
     model.eval()
@@ -48,7 +48,6 @@ def plot_features_And_calculate_metric(model, test_loader, save_path, epoch, dev
         outputs[idx, :] = output.cpu().detach().numpy()
         targets = np.append(targets, label.cpu().numpy())
 
-    # print("Unique labels:", np.unique(targets))
 
     pca = PCA(n_components=20) # PCA for dimensionality reduction PCA: 512 -> 20
     pca_features = pca.fit_transform(outputs) # fit the PCA model and transform the features
@@ -56,6 +55,25 @@ def plot_features_And_calculate_metric(model, test_loader, save_path, epoch, dev
     y_pred = kmeans.fit_predict(pca_features)
 
     acc, nmi, ari = cluster_acc(targets, y_pred), nmi_score(targets, y_pred), ari_score(targets, y_pred)
+
+    return acc, nmi, ari
+
+
+def plot_features(model, test_loader, save_path, epoch, device, args):
+    torch.manual_seed(1)
+    model = model.to(device)
+    model.eval()
+    targets = np.array([])
+    outputs = np.zeros((len(test_loader.dataset), 512 )) 
+    
+    for batch_idx, (x, label, idx) in enumerate(tqdm(test_loader)):
+        x, label = x.to(device), label.to(device)
+        _, output = model(x)
+       
+        outputs[idx, :] = output.cpu().detach().numpy()
+        targets = np.append(targets, label.cpu().numpy())
+
+    print("Unique labels:", np.unique(targets))
 
     # Normalize targets for categorical mapping
     targets_normalized = (targets - targets.min()).astype(int)  # Map to range 0-19
@@ -70,7 +88,6 @@ def plot_features_And_calculate_metric(model, test_loader, save_path, epoch, dev
     plt.title(f"t-SNE Visualization of Features on {args.dataset} - Epoch {epoch}")
     plt.savefig(f"{save_path}/{args.dataset}_epoch{epoch}.png")
 
-    return acc, nmi, ari
 
 
 
@@ -227,6 +244,12 @@ def pretrain(encoder, mlp, dataloaders, args):
             args.writer.add_scalars('epoch_loss', {'pretrain': epoch_pretrain_loss}, epoch+1)
             args.writer.add_scalars('lr', {'pretrain': optimiser.param_groups[0]['lr']}, epoch+1)
 
+            acc, nmi, ari = calculate_metrics(encoder, dloader_unlabeled_test, args.device, args)
+
+            print(f'Epoch-{epoch+1}: ACC = {acc} , NMI = {nmi}, ARI = {ari} ')
+            print("-------------------------------------")
+
+
         ''' Save checkpoint at intervals '''
         if (epoch + 1) % args.save_interval == 0:
             epoch_checkpoint_path = os.path.join(args.checkpoint_dir, f'checkpoint_epoch{epoch + 1}.pth')
@@ -239,12 +262,11 @@ def pretrain(encoder, mlp, dataloaders, args):
             torch.save(state, epoch_checkpoint_path)
             print(f"Checkpoint saved at epoch-{epoch+1}")
 
-            acc, nmi, ari = plot_features_And_calculate_metric(encoder, dloader_unlabeled_test, 
+        if (epoch + 1) % args.plot_interval == 0:
+            plot_features(encoder, dloader_unlabeled_test, 
                            args.checkpoint_dir, epoch+1, args.device, args)
             
-            print("-------------------------------------")
-            print(f'Epoch-{epoch+1}: ACC = {acc} , NMI = {nmi}, ARI = {ari} ')
-            print("-------------------------------------")
+            
 
         if(epoch+1 == args.n_epochs):
             last_model_path = os.path.join(args.checkpoint_dir, f'resnet_epoch{args.n_epochs}.pth')

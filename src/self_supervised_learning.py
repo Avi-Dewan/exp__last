@@ -77,6 +77,8 @@ parser.add_argument('--supervised', dest='supervised', action='store_true',
 
 parser.add_argument('--save_interval', type=int, default=50,
                         help='Interval to save the model and plot tsne(default: 50)')
+parser.add_argument('--plot_interval', type=int, default=50,
+                        help='Interval to save the model and plot tsne(default: 50)')
 parser.add_argument('--checkpoint_path', type = str, default='',
                     help='Path to Load Pre-trained Model From.')
 
