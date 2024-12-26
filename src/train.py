@@ -79,15 +79,9 @@ def pretrain(encoder, mlp, dataloaders, args):
             x_i, x_j = torch.split(inputs, [3, 3], dim=1)
 
             # Get the encoder representation
-            h_i = encoder(x_i)
+            h_i, _ = encoder(x_i)
 
-            h_j = encoder(x_j)
-
-            print(h_i.shape)
-
-            print(h_j.shape)
-
-            print(h_i)
+            h_j, _ = encoder(x_j)
 
             # Get the nonlinear transformation of the representation
             z_i = mlp(h_i)
