@@ -7,8 +7,12 @@ import numpy as np
 from tqdm import tqdm
 
 
-# Add the exp__last directory to the Python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'exp__last')))
+# Get the absolute path of the current directory
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# Get the absolute path of the parent directory
+parent_dir = os.path.dirname(current_dir)
+# Add the parent directory to the system path
+sys.path.append(parent_dir)
 
 
 import torch
