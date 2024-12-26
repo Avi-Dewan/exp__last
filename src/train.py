@@ -146,7 +146,7 @@ def pretrain(encoder, mlp, dataloaders, args):
         dloader_unlabeled_test = CIFAR10Loader(
             root='./data', 
             batch_size=128, 
-            split='test', 
+            split='train', 
             aug=None, 
             shuffle=False, 
             target_list = range(5, 10))
@@ -157,7 +157,7 @@ def pretrain(encoder, mlp, dataloaders, args):
         dloader_unlabeled_test = CIFAR100Loader(
             root='./data', 
             batch_size=128, 
-            split='test', 
+            split='train', 
             aug=None, 
             shuffle=False, 
             target_list = range(50, 100))
