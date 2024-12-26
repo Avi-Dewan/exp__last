@@ -229,16 +229,18 @@ def pretrain(encoder, mlp, dataloaders, args):
             torch.save(state, epoch_checkpoint_path)
             print(f"Checkpoint saved at epoch-{epoch+1}")
 
-        if(epoch+1 == args.n_epochs):
-            last_model_path = os.path.join(args.checkpoint_dir, f'resnet_epoch{args.n_epochs}.pth')
-            torch.save(encoder.state_dict(), last_model_path)
-
             acc, nmi, ari = plot_features_And_calculate_metric(encoder, dloader_unlabeled_test, 
                            args.checkpoint_dir, epoch+1, args.device, args)
             
             print("-------------------------------------")
             print(f'Epoch-{epoch+1}: ACC = {acc} , NMI = {nmi}, ARI = {ari} ')
             print("-------------------------------------")
+
+        if(epoch+1 == args.n_epochs):
+            last_model_path = os.path.join(args.checkpoint_dir, f'resnet_epoch{args.n_epochs}.pth')
+            torch.save(encoder.state_dict(), last_model_path)
+
+            
 
         # For the best performing epoch, reset patience and save model,
         # else update patience.
