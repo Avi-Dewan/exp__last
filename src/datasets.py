@@ -218,6 +218,8 @@ def imagenet_dataloader(args, dataset_paths):
         'valid': None, 'test': None
     }
 
+    args.distributed = False
+
     if args.distributed:
         config = {'pretrain': DistributedSampler(datasets['pretrain']),
                   'train': DistributedSampler(datasets['train']),
