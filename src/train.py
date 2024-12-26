@@ -145,7 +145,7 @@ def pretrain(encoder, mlp, dataloaders, args):
         start_epoch = load_checkpoint(args.checkpoint_path, encoder, mlp, optimiser)
 
     '''Create checkpoint dir to save checkpints'''
-    args.checkpoint_dir = './checkpoint'
+    args.checkpoint_dir = './checkpoints'
     os.makedirs(args.checkpoint_dir, exist_ok=True)
 
     ''' Pretrain loop '''
