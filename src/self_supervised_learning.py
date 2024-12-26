@@ -15,7 +15,7 @@ from train import finetune, evaluate, pretrain, supervised
 from datasets import get_dataloaders
 from utils import experiment_config, print_network, init_weights
 import model.network as models
-from model.resnet import ResNet, BasicBlock
+from model.resnet import ResNet, BasicBlock, Identity
 
 
 warnings.filterwarnings("ignore")
@@ -145,6 +145,8 @@ def main():
         base_encoder = ResNet(block=BasicBlock, num_blocks=[2, 2, 2, 2], num_classes=args.n_classes) # Resnet 18
         proj_head = models.projection_MLP(args)
         sup_head = models.Sup_Head(args)
+    
+    base_encoder.linear = Identity()
     
     # If non Distributed use DataParallel
     if torch.cuda.device_count() > 1:
