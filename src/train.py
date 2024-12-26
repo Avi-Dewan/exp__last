@@ -68,7 +68,7 @@ def plot_features_And_calculate_metric(model, test_loader, save_path, epoch, dev
     scatter = plt.scatter(X_embedded[:, 0], X_embedded[:, 1], c=targets_normalized, cmap='tab20')
     plt.colorbar(scatter)  # Add color bar to verify mapping
     plt.title(f"t-SNE Visualization of Features on {args.dataset_name} - Epoch {epoch}")
-    plt.savefig(f"{save_path}/{args.dataset_name}_epoch{epoch}.png")
+    plt.savefig(f"{save_path}/{args.dataset}_epoch{epoch}.png")
 
     return acc, nmi, ari
 
