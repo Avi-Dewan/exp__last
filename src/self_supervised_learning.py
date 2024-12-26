@@ -111,7 +111,7 @@ def main():
     args = parser.parse_args()
 
     # Setup Distributed Training
-    device, local_rank = setup(distributed=args.distributed)
+    device, local_rank = setup()
 
     # Get Dataloaders for Dataset of choice
     dataloaders, args = get_dataloaders(args)
