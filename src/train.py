@@ -31,7 +31,7 @@ from sklearn.metrics.cluster import normalized_mutual_info_score as nmi_score
 from sklearn.metrics import adjusted_rand_score as ari_score
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
-from util import cluster_acc
+from utils.util import cluster_acc
 from dataloader.cifarloader import CIFAR10Loader, CIFAR100Loader
 
 def plot_features_And_calculate_metric(model, test_loader, save_path, epoch, device, args):

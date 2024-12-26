@@ -10,7 +10,7 @@ import torchvision
 from torchvision import transforms
 from torchvision.datasets import CIFAR10, MNIST, STL10, ImageNet, CIFAR100, ImageFolder
 
-from utils import *
+from util import *
 
 
 def get_dataloaders(args):
