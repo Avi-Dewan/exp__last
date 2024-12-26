@@ -160,7 +160,7 @@ def pretrain(encoder, mlp, dataloaders, args):
             split='train', 
             aug=None, 
             shuffle=False, 
-            target_list = range(50, 100))
+            target_list = range(80, 100))
         
         args.n_unlabeled_classes = 25
     
