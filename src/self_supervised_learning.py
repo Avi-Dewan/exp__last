@@ -142,7 +142,7 @@ def main():
     '''
 
     if args.model == 'resnet18':
-        base_encoder = ResNet(BasicBlock, [2, 2, 2, 2]) # Resnet 18
+        base_encoder = ResNet(block=BasicBlock, num_blocks=[2, 2, 2, 2], num_classes=args.n_classes) # Resnet 18
         proj_head = models.projection_MLP(args)
         sup_head = models.Sup_Head(args)
     
