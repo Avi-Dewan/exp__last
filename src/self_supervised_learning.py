@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel
 
-from train import  pretrain
+from train import pretrain
 from datasets import get_dataloaders
 from utils import experiment_config, print_network, init_weights
 import model.network as models
@@ -34,16 +34,24 @@ parser.add_argument('--model', default='resnet18',
                     help='Model, (Options: resnet18, resnet34, resnet50, resnet101, resnet152).')
 parser.add_argument('--n_epochs', type=int, default=10,
                     help='Number of Epochs in Contrastive Training.')
+parser.add_argument('--finetune_epochs', type=int, default=100,
+                    help='Number of Epochs in Linear Classification Training.')
 parser.add_argument('--warmup_epochs', type=int, default=10,
                     help='Number of Warmup Epochs During Contrastive Training.')
 parser.add_argument('--batch_size', type=int, default=256,
                     help='Number of Samples Per Batch.')
 parser.add_argument('--learning_rate', type=float, default=1.0,
                     help='Starting Learing Rate for Contrastive Training.')
+parser.add_argument('--finetune_learning_rate', type=float, default=0.1,
+                    help='Starting Learing Rate for Linear Classification Training.')
 parser.add_argument('--weight_decay', type=float, default=1e-6,
                     help='Contrastive Learning Weight Decay Regularisation Factor.')
+parser.add_argument('--finetune_weight_decay', type=float, default=0.0,
+                    help='Linear Classification Training Weight Decay Regularisation Factor.')
 parser.add_argument('--optimiser', default='lars',
                     help='Optimiser, (Options: sgd, adam, lars).')
+parser.add_argument('--finetune_optimiser', default='sgd',
+                    help='Finetune Optimiser, (Options: sgd, adam, lars).')
 parser.add_argument('--patience', default=50, type=int,
                     help='Number of Epochs to Wait for Improvement.')
 parser.add_argument('--temperature', type=float, default=0.5, help='NT_Xent Temperature Factor')
@@ -61,6 +69,12 @@ parser.add_argument('--no_twocrop', dest='twocrop', action='store_false',
                     help='Whether or Not to Use Two Crop Augmentation, Used to Create Two Views of the Input for Contrastive Learning. (Default: True)')
 parser.set_defaults(twocrop=True)
 
+
+parser.add_argument('--finetune', dest='finetune', action='store_true',
+                    help='Perform Only Linear Classification Training. (Default: False)')
+parser.set_defaults(finetune=False)
+parser.add_argument('--supervised', dest='supervised', action='store_true',
+                    help='Perform Supervised Pre-Training. (Default: False)')
 
 parser.add_argument('--save_interval', type=int, default=50,
                         help='Interval to save the model and plot tsne(default: 50)')
@@ -105,7 +119,7 @@ def main():
     dataloaders, args = get_dataloaders(args)
 
     # Setup logging, saving models, summaries
-    # args = experiment_config(parser, args)
+    args = experiment_config(parser, args)
 
     if args.model == 'resnet18':
         base_encoder = ResNet(block=BasicBlock, num_blocks=[2, 2, 2, 2], num_classes=args.n_classes) # Resnet 18
