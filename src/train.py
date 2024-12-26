@@ -162,7 +162,7 @@ def pretrain(encoder, mlp, dataloaders, args):
             shuffle=False, 
             target_list = range(80, 100))
         
-        args.n_unlabeled_classes = 25
+        args.n_unlabeled_classes = 20
     
 
     start_epoch = 0
