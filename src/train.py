@@ -83,8 +83,16 @@ def pretrain(encoder, mlp, dataloaders, args):
 
             h_j = encoder(x_j)
 
+            print(h_i.shape)
+
+            print(h_j.shape)
+
+            print(h_i)
+
             # Get the nonlinear transformation of the representation
             z_i = mlp(h_i)
+
+            print(z_i.shape)
 
             z_j = mlp(h_j)
 
