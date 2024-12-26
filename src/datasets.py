@@ -218,13 +218,12 @@ def imagenet_dataloader(args, dataset_paths):
         'valid': None, 'test': None
     }
 
-    args.distributed = False
 
-    if args.distributed:
-        config = {'pretrain': DistributedSampler(datasets['pretrain']),
-                  'train': DistributedSampler(datasets['train']),
-                  'train_valid': DistributedSampler(datasets['train_valid']),
-                  'valid': None, 'test': None}
+    # if args.distributed:
+    #     config = {'pretrain': DistributedSampler(datasets['pretrain']),
+    #               'train': DistributedSampler(datasets['train']),
+    #               'train_valid': DistributedSampler(datasets['train_valid']),
+    #               'valid': None, 'test': None}
 
     dataloaders = {i: DataLoader(datasets[i], sampler=config[i],
                                  num_workers=8, pin_memory=True, drop_last=True,
@@ -327,11 +326,11 @@ def stl10_dataloader(args, dataset_paths):
         'valid': None, 'test': None
     }
 
-    if args.distributed:
-        config = {'pretrain': DistributedSampler(datasets['pretrain']),
-                  'train': DistributedSampler(datasets['train']),
-                  'train_valid': DistributedSampler(datasets['train_valid']),
-                  'valid': None, 'test': None}
+    # if args.distributed:
+    #     config = {'pretrain': DistributedSampler(datasets['pretrain']),
+    #               'train': DistributedSampler(datasets['train']),
+    #               'train_valid': DistributedSampler(datasets['train_valid']),
+    #               'valid': None, 'test': None}
 
     dataloaders = {i: DataLoader(datasets[i], sampler=config[i],
                                  num_workers=8, pin_memory=True, drop_last=True,
@@ -442,11 +441,11 @@ def cifar_dataloader(args, dataset_paths):
         'valid': None, 'test': None
     }
 
-    if args.distributed:
-        config = {'pretrain': DistributedSampler(datasets['pretrain']),
-                  'train': DistributedSampler(datasets['train']),
-                  'train_valid': DistributedSampler(datasets['train_valid']),
-                  'valid': None, 'test': None}
+    # if args.distributed:
+    #     config = {'pretrain': DistributedSampler(datasets['pretrain']),
+    #               'train': DistributedSampler(datasets['train']),
+    #               'train_valid': DistributedSampler(datasets['train_valid']),
+    #               'valid': None, 'test': None}
 
     dataloaders = {i: DataLoader(datasets[i], sampler=config[i],
                                  num_workers=8, pin_memory=True, drop_last=True,
