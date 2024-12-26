@@ -2,8 +2,14 @@
 import os
 import gc
 import logging
+import sys
 import numpy as np
 from tqdm import tqdm
+
+
+# Add the exp__last directory to the Python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'exp__last')))
+
 
 import torch
 import torch.nn as nn
@@ -21,7 +27,7 @@ from sklearn.metrics.cluster import normalized_mutual_info_score as nmi_score
 from sklearn.metrics import adjusted_rand_score as ari_score
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
-from utils.util import cluster_acc
+from util import cluster_acc
 from dataloader.cifarloader import CIFAR10Loader, CIFAR100Loader
 
 def plot_features_And_calculate_metric(model, test_loader, save_path, epoch, device, args):
