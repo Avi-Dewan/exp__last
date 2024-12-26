@@ -127,7 +127,7 @@ def pretrain(encoder, mlp, dataloaders, args):
     '''loading unlabeled datas to check cluster quality and tsne plot'''
     if args.dataset == 'cifar10':
         dloader_unlabeled_test = CIFAR10Loader(
-            root=args.dataset_path, 
+            root='./data', 
             batch_size=128, 
             split='test', 
             aug=None, 
@@ -138,7 +138,7 @@ def pretrain(encoder, mlp, dataloaders, args):
 
     elif args.dataset == 'cifar100':
         dloader_unlabeled_test = CIFAR100Loader(
-            root=args.dataset_path, 
+            root='./data', 
             batch_size=128, 
             split='test', 
             aug=None, 
